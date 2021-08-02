@@ -1,0 +1,9 @@
+{
+  "name": "daoanhdoan/vbo_contextmenu",
+  "description": "VBO - Context Menu - Provides a context menu for Views Bulk Operations.",
+  "type": "drupal-custom-module",
+  "license":"GPL-2.0",
+  "extra": {
+    "installer-name": "vbo_contextmenu"
+  }
+}

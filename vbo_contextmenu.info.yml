@@ -1,0 +1,7 @@
+name: 'VBO - Context Menu'
+description: 'Provides a context menu for Views Bulk Operations.'
+core_version_requirement: ^9
+package: DNC - Views
+type: module
+dependencies:
+  - drupal:views_right_click

@@ -1,0 +1,21 @@
+vbo_contextmenu:
+  js:
+    js/vbo_contextmenu.js: {}
+  dependencies:
+    - core/drupalSettings
+
+jquery-contextmenu:
+  version: 2.8.0
+  license:
+    name: MIT
+    url: https://github.com/swisnl/jQuery-contextMenu/blob/master/LICENSE
+    gpl-compatible: true
+  js:
+    /libraries/jquery-contextmenu/dist/jquery.contextMenu.js: {}
+    /libraries/jquery-contextmenu/dist/jquery.ui.position.js: {}
+  css:
+    component:
+      /libraries/jquery-contextmenu/dist/jquery.contextMenu.css: {}
+  dependencies:
+    - core/jquery
+    - core/drupalSettings

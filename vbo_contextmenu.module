@@ -1,0 +1,240 @@
+<?php
+/**
+ * @file
+ */
+
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Render\Element;
+use Drupal\Core\Template\Attribute;
+use Drupal\Core\Url;
+use Drupal\views\ViewExecutable;
+
+/**
+ * Implements @see hook_form_FORM_ID_alter() for views_ui_config_item_form.
+ */
+function vbo_contextmenu_form_views_ui_config_item_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  if(!$handler = $form_state->getStorage()['handler']) {
+    return;
+  }
+  if ($handler->getPluginId() !== 'views_bulk_operations_bulk_form') {
+    return;
+  }
+  $options = $form_state->getStorage()['handler']->options;
+
+  $status = !empty($options['vbo_contextmenu']) ? $options['vbo_contextmenu'] : ['enable' => FALSE, 'hide_form' => FALSE];
+  $form['options']['vbo_contextmenu'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Context menu'),
+    'enable' => array(
+      '#type' => 'checkbox',
+      '#title' => t('Enable context menu'),
+      '#default_value' => $status['enable'],
+    ),
+    'hide_form' => array(
+      '#type' => 'checkbox',
+      '#title' => t('Hide operations form'),
+      '#default_value' => $status['hide_form'],
+    ),
+  );
+
+  $form['actions']['submit']['#submit'][] = 'vbo_contextmenu_form_views_ui_config_item_form_submit';
+}
+
+/**
+ * Form submission handler.
+ *
+ * @param array $form
+ *   An associative array containing the structure of the form.
+ * @param \Drupal\Core\Form\FormStateInterface $form_state
+ *   The current state of the form.
+ */
+function vbo_contextmenu_form_views_ui_config_item_form_submit(array &$form, FormStateInterface &$form_state) {
+  $view = $form_state->get('view');
+  $display_id = $form_state->get('display_id');
+  $id = $form_state->get('id');
+  $type = $form_state->get('type');
+  $executable = $view->getExecutable();
+  $handler = $executable->getHandler($display_id, $type, $id);
+
+  // Set values.
+  $state_options = $form_state->getValue('options', []);
+  if (!empty($state_options['vbo_contextmenu'])) {
+    $handler['vbo_contextmenu'] = $state_options['vbo_contextmenu'];
+  }
+  else {
+    $handler['vbo_contextmenu'] = ['enable' => FALSE, 'hide_form' => FALSE];
+  }
+  // Removing the form values of the views link attributes module.
+  $executable->setHandler($display_id, $type, $id, $handler);
+
+  // Write to cache
+  $view->cacheSet();
+}
+
+/**
+ * Implements @see hook_module_implements_alter().
+ */
+function vbo_contextmenu_module_implements_alter(&$implementations, $hook)
+{
+  if ($hook == 'views_pre_build') {
+    if (isset($implementations['vbo_contextmenu'])) {
+      $group = $implementations['vbo_contextmenu'];
+      unset($implementations['vbo_contextmenu']);
+      $implementations['vbo_contextmenu'] = $group;
+    }
+  }
+}
+
+
+/**
+ * Implements @see hook_views_pre_build().
+ */
+function vbo_contextmenu_views_pre_build($view) {
+  // Exclude right click fields from being displayed on the page and flag that
+  // the view has right click fields.
+  $view->vbo_contextmenu = $view->vbo_hide_form = FALSE;
+  if (empty($view->field)) {
+    return;
+  }
+  foreach ($view->field as &$field) {
+    if ($field->getPluginId() === 'views_bulk_operations_bulk_form') {
+      if(!empty($field->options['vbo_contextmenu']['enable'])) {
+        $view->vbo_contextmenu = !empty($field->options['selected_actions']);
+      }
+      if (!empty($field->options['vbo_contextmenu']['hide_form'])) {
+        $view->vbo_hide_form = TRUE;
+      }
+    }
+  }
+}
+
+
+/**
+ * Implements @see hook_views_post_render().
+ */
+function vbo_contextmenu_views_post_render($view, &$output, $cache) {
+  if (!empty($view->vbo_contextmenu)) {
+    $items = [];
+    $fields = $view->display_handler->getHandlers('field');
+    foreach ($fields as $id => $field) {
+      if (!empty($field->options['vbo_contextmenu'])) {
+        if ($field->getPluginId() === 'views_bulk_operations_bulk_form') {
+          $selected_actions = $field->options['selected_actions'];
+          $actions = vbo_contextmenu_get_bulk_options($selected_actions);
+          foreach ($actions as $id => $action) {
+            $link_action = [
+              '#type' => 'link',
+              '#url' => Url::fromRoute('<current>'),
+              '#title' => $action,
+              '#options' => [
+                'attributes' => [
+                  'class' => ['vbo-contextmenu-vbo-action', 'vbo-contextmenu-vbo-action-' . $id],
+                  'view-name' => $view->id(),
+                  'view-display' => $view->current_display,
+                  'vbo-action' => $id,
+                  'contextmenu-id' => 'contextmenu-vbo-' . $view->id() . '-' . $view->current_display
+                ],
+                'fragment' => 'vbo-action-' . $id
+              ]
+            ];
+            $items[] = \Drupal::service('renderer')->renderRoot($link_action);
+          }
+        }
+      }
+    }
+    if (!empty($items)) {
+      // Add row menus to rendered view.
+      $menu_output = "";
+      $menu_output .= '<div class="vbo-contextmenu visually-hidden">';
+      $menu_output .= '<menu id="contextmenu-vbo-' . $view->id() . '-' . $view->current_display . '" type="context" style="display: none;">';
+      $menu_output .= implode("\n", $items);
+      $menu_output .= '</menu>';
+      $menu_output .= '</div>';
+      $output['#suffix'] = (!empty($output['#suffix']) ? $output['#suffix'] : "") . $menu_output;
+    }
+  }
+}
+
+function vbo_contextmenu_get_bulk_options($select_actions) {
+  $options = [];
+  $entity_types = \Drupal::getContainer()->get('views_bulk_operations.data')->getEntityTypeIds();
+  // Get actions only if there are any entity types set for the view.
+  if (!empty($entity_types)) {
+    foreach (\Drupal::getContainer()->get('plugin.manager.views_bulk_operations_action')->getDefinitions() as $id => $definition) {
+      if (empty($definition['type']) || in_array($definition['type'], $entity_types, TRUE)) {
+        $actions[$id] = $definition;
+      }
+    }
+  }
+  foreach ($select_actions as $key => $selected_action_data) {
+    if (!isset($actions[$selected_action_data['action_id']])) {
+      continue;
+    }
+
+    $definition = $actions[$selected_action_data['action_id']];
+
+    // Check access permission, if defined.
+    if (!empty($definition['requirements']['_permission']) && !\Drupal::currentUser()->hasPermission($definition['requirements']['_permission'])) {
+      continue;
+    }
+
+    // Check custom access, if defined.
+    if (!empty($definition['requirements']['_custom_access']) && !$definition['class']::customAccess(\Drupal::currentUser(), $this->view)) {
+      continue;
+    }
+
+    // Override label if applicable.
+    if (!empty($selected_action_data['preconfiguration']['label_override'])) {
+      $options[$key] = $selected_action_data['preconfiguration']['label_override'];
+    }
+    else {
+      $options[$key] = $definition['label'];
+    }
+  }
+
+  return $options;
+}
+
+/**
+ * Implements @see hook_preprocess()
+ */
+function vbo_contextmenu_preprocess(&$variables, $hook) {
+  if (!empty($variables['view'])) {
+    $view = $variables['view'];
+    if (!empty($view->vbo_contextmenu)) {
+      $variables['view']->element['#attached']['library'][] = 'vbo_contextmenu/jquery-contextmenu';
+    }
+    if (!empty($view->vbo_contextmenu) || !empty($view->vbo_hide_form)) {
+      $variables['view']->element['#attached']['library'][] = 'vbo_contextmenu/vbo_contextmenu';
+    }
+
+  }
+}
+
+/**
+ * Implements hook_form_alter()
+ */
+function vbo_contextmenu_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  if (preg_match("/^views_form_\.*/", $form_id)) {
+    $view = NULL;
+    foreach ($form_state->getBuildInfo()['args'] as $item) {
+      if ($item instanceof ViewExecutable) {
+        $view = $item;
+        break;
+      }
+    }
+    if (!empty($view->vbo_contextmenu)) {
+      $display_id = $view->current_display;
+      if (!empty($form['#attributes'])) {
+        if ($form['#attributes'] instanceof Attribute) {
+          $form['#attributes']->setAttribute('contextmenu', 'contextmenu-vbo-' . $view->id . '-' . $display_id);
+        } else {
+          $form['#attributes']['contextmenu'] = 'contextmenu-vbo-' . $view->id() . '-' . $display_id;
+        }
+      }
+    }
+    if (!empty($view->vbo_hide_form)) {
+      $form['#attributes']['class'][] = 'vbo-hide-form';
+    }
+  }
+}
