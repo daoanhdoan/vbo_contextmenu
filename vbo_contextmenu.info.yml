@@ -4,4 +4,4 @@ core_version_requirement: ^9
 package: DNC - Views
 type: module
 dependencies:
-  - drupal:views_right_click
+  - daoanhdoan:views_right_click

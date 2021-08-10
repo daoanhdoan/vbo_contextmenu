@@ -7,7 +7,7 @@
         "installer-name": "vbo_contextmenu"
     },
     "require": {
-        "drupal/views_right_click": "*",
+        "daoanhdoan/views_right_click": "*",
         "drupal/views": "*",
         "drupal/filter": "*",
         "drupal/user": "*",
